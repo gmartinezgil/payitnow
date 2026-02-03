@@ -1,0 +1,13 @@
+pip3 install mlx-lm
+export HF_TOKEN="hf_..."
+mlx_lm.lora --model google/gemma-2-2b-it --train --data . --iters 600 --batch-size 4 --num-layers 16 --adapter-path adapters --save-every 100
+mlx_lm.fuse --model google/gemma-2-2b-it --adapter-path adapters --save-path fused_model --de-quantize
+python3 -c "from huggingface_hub import hf_hub_download; hf_hub_download(repo_id='google/gemma-2-2b-it', filename='tokenizer.model', local_dir='fused_model')"
+git clone https://github.com/ggerganov/llama.cpp
+cd llama.cpp
+pip3 install -r requirements.txt
+cd ..
+python3 llama.cpp/convert_hf_to_gguf.py fused_model --outfile payitnow.gguf --outtype q8_0
+ollama create payitnow -f Modelfile
+ollama list
+ollama run payitnow "Send 50 bucks to Mom"

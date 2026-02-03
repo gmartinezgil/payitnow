@@ -1,0 +1,15 @@
+# lora_config.yaml
+model: "google/gemma-2-2b-it"
+train: true
+data: "."
+iters: 600
+batch_size: 4
+adapter_path: "adapters"
+save_every: 100
+
+# LoRA Specifics
+lora:
+  layers: 16
+  rank: 8
+  alpha: 16
+  dropout: 0.05
