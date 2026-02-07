@@ -61,7 +61,8 @@ public class PaymentAgent {
                     You are a payment assistant. You MUST output strictly valid JSON.
                     
                     INTENTS:
-                    - SETTLE_FIAT: User wants to send 'real money', 'cash', 'fiat', or transfer to a 'bank' or 'person' in a specific 'country'.
+                    - SETTLE_FIAT: User wants to send 'real money', 'cash', 'fiat', or transfer to a 'bank' or 'person' 
+                    in a specific 'country'.
                       Keywords: "Send USD", "Send MXN", "Wire", "Remit", "To Mexico", "To Mom".
                     - SAVE_CONTACT: User providing bank details to save a beneficiary.
                       Keywords: "Save contact", "Add beneficiary", "Save account for [Name]".
@@ -80,7 +81,8 @@ public class PaymentAgent {
                     
                     Output Format:
                     {"intent": "SETTLE_FIAT", "amount": 500, "currency": "MXN", "country": "Mexico", "beneficiary": "Juan"}
-                    {"intent": "SAVE_CONTACT", "beneficiary": "Mom", "country": "MX", "accountNumber": "123456789012345678", "routingNumber": "BCMRMXMMXXX"}
+                    {"intent": "SAVE_CONTACT", "beneficiary": "Mom", "country": "MX", "accountNumber": "123456789012345678", 
+                    "routingNumber": "BCMRMXMMXXX"}
                     """)
             .build();
 
@@ -206,7 +208,8 @@ public class PaymentAgent {
                     String fromCoin = "ETH";
                     String toCoin = intent.getCurrency(); // "USDC"
                     String amountToBuy = intent.getAmount().toString(); // "20"
-                    System.out.println("fromCoin(" + fromCoin + "), toCoin(" + toCoin + "), amountToReceive(" + amountToBuy + ")");
+//                    System.out.println("fromCoin(" + fromCoin + "), toCoin(" + toCoin + "), " +
+//                            "amountToReceive(" + amountToBuy + ")");
 
                     // --- A. VALIDATE MINIMUMS (New Feature) ---
                     // We reverse the query: "How much ETH is 20 USDC?" to estimate cost
@@ -224,9 +227,11 @@ public class PaymentAgent {
                             BigDecimal requiredEth = new BigDecimal(estimatedEthCost);
                             BigDecimal requiredTotal = requiredEth.multiply(new BigDecimal("1.05"));// BUFFER: Add 5% for gas fees
                             // Check Min Amount from API
-//                            if (quote.minAmount != null && new BigDecimal(quote.minAmount).compareTo(new BigDecimal(amountToBuy)) > 0) {
+//                            if (quote.minAmount != null && new BigDecimal(quote.minAmount)
+//                            .compareTo(new BigDecimal(amountToBuy)) > 0) {
 //                                // e.g. Trying to buy 20 USDC, but min is 120
-//                                resultMsg = String.format("⚠️ Amount too low. Minimum buy is %s %s.", quote.minAmount, toCoin);
+//                                resultMsg = String.format("⚠️ Amount too low. Minimum buy is %s %s.", quote.minAmount,
+//                                toCoin);
 //                                return CompletableFuture.completedFuture(Map.of("final_response", resultMsg));
 //                            }
                             if ((currentBalance.compareTo(new BigDecimal(quote.minAmount)) < 0
@@ -236,7 +241,8 @@ public class PaymentAgent {
                                     resultMsg = String.format("⚠️ Insufficient Bot Funds.\n\n" +
                                                     "You need to buy at minimum %s %s, you can't buy just %s %s.\n" +
                                                     "Current Balance: %s ETH\n\n" +
-                                                    "👉 Please scan the QR code to top up the bot wallet with ETH to make the conversion and buy the minimum.",
+                                                    "👉 Please scan the QR code to top up the bot wallet with ETH to make " +
+                                                    "the conversion and buy the minimum.",
                                             quote.minAmount,
                                             toCoin,
                                             amountToBuy,
@@ -271,7 +277,8 @@ public class PaymentAgent {
 
                     if (MOCK_MODE) {
                         depositAddress = "0xMockDepositAddress123";
-                        resultMsg = String.format("✅ SWAP INITIATED (MOCK)!\n\n1. Created Order (ETH -> %s)\n2. Deposit Address: %s\n\nYou will receive %s %s shortly.",
+                        resultMsg = String.format("✅ SWAP INITIATED (MOCK)!\n\n1. Created Order (ETH -> %s)\n2. " +
+                                        "Deposit Address: %s\n\nYou will receive %s %s shortly.",
                                 toCoin, depositAddress, amountToBuy, toCoin);
                     } else {
                         // Call Real API
@@ -290,21 +297,26 @@ public class PaymentAgent {
                                     .append("deposit_address", depositAddress)
                                     .append("created_at", System.currentTimeMillis());
                             walletService.getDatabase().getCollection("active_swaps").insertOne(swapDoc);
-                            resultMsg = String.format("✅ SWAP CREATED!\nTx ID: %s\n\nPlease deposit %s %s to the address below within 15 minutes.", txId, amountToBuy, fromCoin);
-                            //return CompletableFuture.completedFuture(Map.of("final_response", "⚠️ Swap Failed: " + swapResponse.getString("error")));
+                            resultMsg = String.format("✅ SWAP CREATED!\nTx ID: %s\n\nPlease deposit %s %s to the address " +
+                                    "below within 15 minutes.", txId, amountToBuy, fromCoin);
+                            //return CompletableFuture.completedFuture(Map.of("final_response", "⚠️ Swap Failed: "
+                            // + swapResponse.getString("error")));
                         } else {
                             // 2. FALLBACK: Arc Network Direct Swap
-                            System.out.println("⚠️ LetsExchange failed (" + swapResponse.getString("error") + "). Switching to Arc On-Chain Swap...");
+                            System.out.println("⚠️ LetsExchange failed (" + swapResponse.getString("error") + "). " +
+                                    "Switching to Arc On-Chain Swap...");
 
                             if (toCoin.equalsIgnoreCase("USDC") && fromCoin.equalsIgnoreCase("ETH")) {
                                 // You cannot swap "Fiat" here, only tokens.
                                 // If user wanted Fiat, we must fail.
-                                resultMsg = "⚠️ LetsExchange is down. Direct Arc swap is available only for Crypto-to-Crypto, not Fiat.";
+                                resultMsg = "⚠️ LetsExchange is down. Direct Arc swap is available only for Crypto-to-Crypto, " +
+                                        "not Fiat.";
                             } else {
                                 // Execute On-Chain Swap
                                 // Note: This requires the USER'S private key signed locally,
                                 // or the Bot wallet sending funds it already holds.
-                                String txHash = arcDexService.swapOnChain(wallet, "USDC_ADDR", "ETH_ADDR", new BigInteger(amountToBuy));
+                                String txHash = arcDexService.swapOnChain(wallet, "USDC_ADDR", "ETH_ADDR",
+                                        new BigInteger(amountToBuy));
                                 // Real Mode: Save to DB for Monitor
                                 Document swapDoc = new Document("tx_id", txHash)
                                         .append("user_id", userId)
@@ -351,8 +363,10 @@ public class PaymentAgent {
                     if (contact == null) {
                         // If we don't know them, we must ask the user for details
                         resultMsg = String.format("👤 I don't have a bank account saved for '%s'.\n\n" +
-                                "Please provide their details in this format:\n" +
-                                "Name, Routing/SWIFT, Account Number, Country", beneficiary);
+                                        "Please provide their details in this format:\n" +
+                                        "Name, Routing/SWIFT, Account Number, Country\n" +
+                                        "Please say: 'Save %s account: US, Chase, Routing 123...'"
+                                , beneficiary, beneficiary);
                     } else {
                         // 2. BALANCE CHECK: Do we have the cash?
                         BigDecimal masterBalance = circlePayoutService.getMasterWalletBalance();
@@ -409,7 +423,8 @@ public class PaymentAgent {
                                 resultMsg = String.format("✅ SETTLEMENT SUCCESSFUL!\n\n" +
                                                 "Sending %s %s to %s's %s account.\n" +
                                                 "Payout ID: %s",
-                                        amount, contact.getString("currency"), beneficiary, contact.getString("bank_name"), payoutId);
+                                        amount, currency, beneficiary,
+                                        contact.getString("bank_name"), payoutId);
                             }
                         }
                     }
@@ -430,7 +445,8 @@ public class PaymentAgent {
                     BigDecimal amountToSend = intent.getAmount();
 
                     if (currentBalance.compareTo(amountToSend) < 0 && !MOCK_MODE) {
-                        resultMsg = String.format("⚠️ Transaction Failed: Insufficient Funds.\nRequired: %s %s\nAvailable: %s %s",
+                        resultMsg = String.format("⚠️ Transaction Failed: Insufficient Funds.\nRequired: %s %s\n" +
+                                        "Available: %s %s",
                                 amountToSend, currency, currentBalance, currency);
                     } else {
                         resultMsg = String.format("✅ TRANSFER EXECUTED:\nTo: %s\nAmount: %s %s",
@@ -457,15 +473,21 @@ public class PaymentAgent {
         workflow.addNode("save_contact", state -> {
             PaymentIntent intent = (PaymentIntent) state.value("intent").orElseThrow();
             Long userId = state.value("userId").map(id -> Long.parseLong(id.toString())).orElse(12345L);
+            String currency = intent.getCurrency();
+            if (currency == null) {
+                currency = "USD"; // Default to USD if not specified
+            }
+            String accNum = intent.getAccountNumber(); // "12345"
+            String routNum = intent.getRoutingNumber(); // "121000248"
 
             // Create the contact document
             Document contact = new Document("user_id", userId)
                     .append("nickname", intent.getBeneficiary().toLowerCase())
                     .append("name", intent.getBeneficiary())
                     .append("country", intent.getCountry()) // normalization to "MX", "US"
-                    .append("currency", intent.getCurrency())
-                    .append("account_number", intent.getAccountNumber())
-                    .append("routing_number", intent.getRoutingNumber())
+                    .append("currency", currency)
+                    .append("account_number", accNum)
+                    .append("routing_number", routNum)
                     .append("created_at", System.currentTimeMillis());
 
             // Register with Circle first to get the beneficiary_id
@@ -474,7 +496,9 @@ public class PaymentAgent {
                         intent.getBeneficiary(),
                         intent.getBeneficiary().toLowerCase() + "@example.com",
                         intent.getCountry(),
-                        intent.getCurrency()
+                        currency,
+                        accNum,
+                        routNum
                 );
                 contact.append("circle_beneficiary_id", circleId);
                 walletService.getDatabase().getCollection("contacts").insertOne(contact);
@@ -482,7 +506,8 @@ public class PaymentAgent {
                 return CompletableFuture.completedFuture(Map.of("final_response",
                         "✅ Contact Saved! You can now just say 'Send money to " + intent.getBeneficiary() + "'."));
             } catch (Exception e) {
-                return CompletableFuture.completedFuture(Map.of("final_response", "❌ Failed to save contact: " + e.getMessage()));
+                return CompletableFuture.completedFuture(Map.of("final_response", "❌ Failed to save contact: "
+                        + e.getMessage()));
             }
         });
 
@@ -536,6 +561,7 @@ public class PaymentAgent {
         // This tells the graph "We are done now".
         workflow.addEdge("execute_transaction", END);
         workflow.addEdge("ask_missing_info", END);
+        workflow.addEdge("save_contact", END);
 
         return workflow;
     }
