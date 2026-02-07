@@ -20,7 +20,7 @@ public class CirclePayoutService {
 
     // TOGGLE: Set to false only if you have a verified Circle Mint Institutional Account
     private static final boolean MOCK_MODE = false;
-    
+
     /**
      * MASTER METHOD: Create Beneficiary -> Send Payout
      * Create a Payout (USDC -> Fiat Bank Wire)
@@ -58,7 +58,7 @@ public class CirclePayoutService {
         }
     }
 
-    private String createWireBeneficiary(String name, String email, String country, String currency) throws Exception {
+    public String createWireBeneficiary(String name, String email, String country, String currency) throws Exception {
         JSONObject json = new JSONObject();
         json.put("idempotencyKey", UUID.randomUUID().toString());
 
@@ -200,6 +200,36 @@ public class CirclePayoutService {
             e.printStackTrace();
         }
         return BigDecimal.ZERO;
+    }
+
+    /**
+     * CHECK PAYOUT STATUS
+     * Endpoint: GET /v1/businessAccount/payouts/{id}
+     */
+    public String getPayoutStatus(String payoutId) {
+        if (MOCK_MODE) {
+            // Simulate progression: Pending -> Complete
+            // In a real mock, you might check a timestamp or just return "complete"
+            return "complete";
+        }
+
+        Request request = new Request.Builder()
+                .url(BASE_URL + "/businessAccount/payouts/" + payoutId)
+                .get()
+                .addHeader("Authorization", "Bearer " + API_KEY)
+                .build();
+
+        try (Response response = client.newCall(request).execute()) {
+            if (!response.isSuccessful()) return "error";
+
+            JSONObject json = new JSONObject(response.body().string());
+            // Path: data -> status
+            return json.getJSONObject("data").getString("status");
+            // Common statuses: "pending", "complete", "failed"
+        } catch (Exception e) {
+            e.printStackTrace();
+            return "error";
+        }
     }
 
 }

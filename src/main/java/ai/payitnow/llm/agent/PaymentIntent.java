@@ -2,6 +2,7 @@ package ai.payitnow.llm.agent;
 
 import java.io.Serializable;
 import java.math.BigDecimal;
+import java.util.Objects;
 
 //import lombok.Data;
 //import lombok.ToString;
@@ -20,6 +21,11 @@ public class PaymentIntent implements Serializable {
     private String country;     // e.g., "Mexico"
     private String beneficiary; // e.g., "Juan Perez"
     private boolean isComplete;
+
+    //
+    private String accountNumber;// CLABE or Account No
+    private String routingNumber;// SWIFT/BIC or Routing No
+    private String bankName;// e.g. "BBVA"
 
     public String getIntent() {
         return intent;
@@ -77,6 +83,42 @@ public class PaymentIntent implements Serializable {
         this.beneficiary = beneficiary;
     }
 
+    public String getAccountNumber() {
+        return accountNumber;
+    }
+
+    public void setAccountNumber(String accountNumber) {
+        this.accountNumber = accountNumber;
+    }
+
+    public String getRoutingNumber() {
+        return routingNumber;
+    }
+
+    public void setRoutingNumber(String routingNumber) {
+        this.routingNumber = routingNumber;
+    }
+
+    public String getBankName() {
+        return bankName;
+    }
+
+    public void setBankName(String bankName) {
+        this.bankName = bankName;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (o == null || getClass() != o.getClass()) return false;
+        PaymentIntent that = (PaymentIntent) o;
+        return isComplete == that.isComplete && Objects.equals(intent, that.intent) && Objects.equals(amount, that.amount) && Objects.equals(currency, that.currency) && Objects.equals(recipient, that.recipient) && Objects.equals(country, that.country) && Objects.equals(beneficiary, that.beneficiary) && Objects.equals(accountNumber, that.accountNumber) && Objects.equals(routingNumber, that.routingNumber) && Objects.equals(bankName, that.bankName);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(intent, amount, currency, recipient, country, beneficiary, isComplete, accountNumber, routingNumber, bankName);
+    }
+
     @Override
     public String toString() {
         return "PaymentIntent{" +
@@ -87,6 +129,10 @@ public class PaymentIntent implements Serializable {
                 ", country='" + country + '\'' +
                 ", beneficiary='" + beneficiary + '\'' +
                 ", isComplete=" + isComplete +
+                ", accountNumber='" + accountNumber + '\'' +
+                ", routingNumber='" + routingNumber + '\'' +
+                ", bankName='" + bankName + '\'' +
                 '}';
     }
+
 }

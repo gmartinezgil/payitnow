@@ -1,5 +1,6 @@
 package ai.payitnow.llm.infra;
 
+import ai.payitnow.llm.circle.CirclePayoutService;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.Updates;
@@ -17,6 +18,7 @@ public class TransactionMonitor {
     private final SwapService swapService;
     private final TelegramBot bot;
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+    private final CirclePayoutService circlePayoutService = new CirclePayoutService();
 
     public TransactionMonitor(MongoCollection<Document> collection, SwapService service, TelegramBot bot) {
         this.swapCollection = collection;
@@ -33,7 +35,8 @@ public class TransactionMonitor {
     private void checkTransactions() {
         // Find swaps that are NOT done yet
         // Statuses to watch: "wait" (waiting for deposit), "confirmation", "exchange", "sending"
-        for (Document doc : swapCollection.find(Filters.in("status", "wait", "confirmation", "exchange", "sending"))) {
+        for (Document doc : swapCollection.find(Filters.in("status",
+                "wait", "confirmation", "exchange", "sending", "payout_processing"))) {
 
             String txId = doc.getString("tx_id");
             Long userId = doc.getLong("user_id");
@@ -54,24 +57,42 @@ public class TransactionMonitor {
                     bot.execute(new SendMessage(userId, message));
                 }
             }
-            // --- NEW: HANDLE FIAT PAYOUTS ---
+            // --- HANDLE FIAT PAYOUTS ---
             if ("payout_processing".equals(doc.getString("status"))) {
-                // In a real app, you would poll Circle's GET /v1/payouts/{id}
-                // For MVP, we auto-complete it after 30 seconds.
-                long createdAt = doc.getLong("created_at");
-                if (System.currentTimeMillis() - createdAt > 30_000) {
+//                // In a real app, you would poll Circle's GET /v1/payouts/{id}
+//                // For MVP, we auto-complete it after 30 seconds.
+//                long createdAt = doc.getLong("created_at");
+//                if (System.currentTimeMillis() - createdAt > 30_000) {
+//
+//                    // 1. Update DB
+//                    swapCollection.updateOne(Filters.eq("tx_id", txId), Updates.set("status", "settled"));
+//
+//                    // 2. Notify User
+//                    userId = doc.getLong("user_id");
+//                    String amount = doc.getString("amount_expected");
+//                    String currency = doc.getString("pair").split("->")[1]; // "MXN"
+//
+//                    bot.execute(new SendMessage(userId,
+//                            String.format("🏦 MONEY DEPOSITED!\n\nThe payout %s has been settled.\n%s %s is now in the beneficiary's bank account.",
+//                                    txId, amount, currency)));
+//                }
+                String payoutId = doc.getString("tx_id");
+                userId = doc.getLong("user_id");
 
-                    // 1. Update DB
-                    swapCollection.updateOne(Filters.eq("tx_id", txId), Updates.set("status", "settled"));
+                // Call Circle: GET /v1/businessAccount/payouts/{id}
+                String currentStatus = circlePayoutService.getPayoutStatus(payoutId);
 
-                    // 2. Notify User
-                    userId = doc.getLong("user_id");
-                    String amount = doc.getString("amount_expected");
-                    String currency = doc.getString("pair").split("->")[1]; // "MXN"
+                if (!currentStatus.equals("pending") && !currentStatus.equals("error")) {
+                    // Update MongoDB
+                    String finalStatus = currentStatus.equals("complete") ? "settled" : "failed";
+                    swapCollection.updateOne(Filters.eq("tx_id", payoutId), Updates.set("status", finalStatus));
 
-                    bot.execute(new SendMessage(userId,
-                            String.format("🏦 MONEY DEPOSITED!\n\nThe payout %s has been settled.\n%s %s is now in the beneficiary's bank account.",
-                                    txId, amount, currency)));
+                    // Notify User
+                    String emoji = finalStatus.equals("settled") ? "✅" : "❌";
+                    bot.execute(new SendMessage(userId, String.format(
+                            "%s **Payment Update**\nYour transfer (ID: %s) is now **%s**.",
+                            emoji, payoutId.substring(0,8), finalStatus.toUpperCase()
+                    )));
                 }
             }
         }

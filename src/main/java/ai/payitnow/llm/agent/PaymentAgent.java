@@ -63,6 +63,9 @@ public class PaymentAgent {
                     INTENTS:
                     - SETTLE_FIAT: User wants to send 'real money', 'cash', 'fiat', or transfer to a 'bank' or 'person' in a specific 'country'.
                       Keywords: "Send USD", "Send MXN", "Wire", "Remit", "To Mexico", "To Mom".
+                    - SAVE_CONTACT: User providing bank details to save a beneficiary.
+                      Keywords: "Save contact", "Add beneficiary", "Save account for [Name]".
+                      Required: "beneficiary", "country", "accountNumber", "routingNumber" (optional: "bankName").
                     - TRANSFER: User wants to send Crypto (ETH, BTC, USDC tokens) to a wallet address.
                     - BUY: User wants to swap ETH for Tokens (USDC).
                     - SELL: User wants to swap Tokens for ETH.
@@ -72,9 +75,12 @@ public class PaymentAgent {
                     - If currency is USD, MXN, or EUR -> Intent is SETTLE_FIAT.
                     - If currency is USDC, USDT, ETH -> Intent is TRANSFER (or BUY/SELL).
                     - Extract 'country' (e.g., Mexico, USA) and 'beneficiary' (e.g., Juan, Mom) for SETTLE_FIAT.
+                    - If user says "Save Mom's account: Mexico, CLABE 123..." -> Intent is SAVE_CONTACT.
+                    - Identify "accountNumber" (digits) and "routingNumber" (alphanumeric SWIFT or digits).
                     
                     Output Format:
                     {"intent": "SETTLE_FIAT", "amount": 500, "currency": "MXN", "country": "Mexico", "beneficiary": "Juan"}
+                    {"intent": "SAVE_CONTACT", "beneficiary": "Mom", "country": "MX", "accountNumber": "123456789012345678", "routingNumber": "BCMRMXMMXXX"}
                     """)
             .build();
 
@@ -97,6 +103,13 @@ public class PaymentAgent {
                 // Check for UNKNOWN or null
                 if ("UNKNOWN".equals(intent.getIntent())) {
                     return CompletableFuture.completedFuture(Map.of("error", "I didn't catch that."));
+                }
+
+                // NEW: Validation for SAVE_CONTACT
+                if ("SAVE_CONTACT".equalsIgnoreCase(intent.getIntent())) {
+                    if (intent.getBeneficiary() != null && intent.getAccountNumber() != null) {
+                        intent.setComplete(true);
+                    }
                 }
 
                 // FIX 2: SAFETY NET FOR FIAT
@@ -145,14 +158,6 @@ public class PaymentAgent {
                 String resultMsg = null;
                 String depositAddressForQr = null; // Store address for QR
 
-                // --- 1. CHECK BALANCE (Information Only) ---
-//                if ("CHECK_BALANCE".equalsIgnoreCase(intent.getIntent()) || "BALANCE".equalsIgnoreCase(intent.getIntent())) {
-//                    String currency = intent.getCurrency() != null ? intent.getCurrency() : "USDC";
-//                    String balance = cryptoService.checkBalance(address, currency);
-//                    String chain = currency.equals("USDC") ? "Arc Network" : "Sepolia/BSC";
-//                    resultMsg = String.format("💰 Wallet Balance (%s)\n%s: %s\nNetwork: %s",
-//                            address.substring(0, 6) + "...", currency, balance, chain);
-//                }
                 // --- 1. CHECK BALANCE (Multi-Asset) ---
                 if ("CHECK_BALANCE".equalsIgnoreCase(intent.getIntent()) || "BALANCE".equalsIgnoreCase(intent.getIntent())) {
 
@@ -368,7 +373,7 @@ public class PaymentAgent {
                         // 3. EXECUTE: Use the saved 'beneficiary_id'
                         String beneId = contact.getString("circle_beneficiary_id");
                         String payoutResponse = circlePayoutService.sendFiatToPerson(
-                                beneficiary,
+                                beneId, //beneficiary,
                                 beneEmail,
                                 countryCode,
                                 amount,
@@ -448,7 +453,40 @@ public class PaymentAgent {
             }
         });
 
-        // --- NODE 3: ASK MISSING ---
+        // -- NODE 3: SAVE CONTACT --
+        workflow.addNode("save_contact", state -> {
+            PaymentIntent intent = (PaymentIntent) state.value("intent").orElseThrow();
+            Long userId = state.value("userId").map(id -> Long.parseLong(id.toString())).orElse(12345L);
+
+            // Create the contact document
+            Document contact = new Document("user_id", userId)
+                    .append("nickname", intent.getBeneficiary().toLowerCase())
+                    .append("name", intent.getBeneficiary())
+                    .append("country", intent.getCountry()) // normalization to "MX", "US"
+                    .append("currency", intent.getCurrency())
+                    .append("account_number", intent.getAccountNumber())
+                    .append("routing_number", intent.getRoutingNumber())
+                    .append("created_at", System.currentTimeMillis());
+
+            // Register with Circle first to get the beneficiary_id
+            try {
+                String circleId = circlePayoutService.createWireBeneficiary(
+                        intent.getBeneficiary(),
+                        intent.getBeneficiary().toLowerCase() + "@example.com",
+                        intent.getCountry(),
+                        intent.getCurrency()
+                );
+                contact.append("circle_beneficiary_id", circleId);
+                walletService.getDatabase().getCollection("contacts").insertOne(contact);
+
+                return CompletableFuture.completedFuture(Map.of("final_response",
+                        "✅ Contact Saved! You can now just say 'Send money to " + intent.getBeneficiary() + "'."));
+            } catch (Exception e) {
+                return CompletableFuture.completedFuture(Map.of("final_response", "❌ Failed to save contact: " + e.getMessage()));
+            }
+        });
+
+        // --- NODE 4: ASK MISSING ---
         workflow.addNode("ask_missing_info", state -> {
             return CompletableFuture.completedFuture(
                     Map.of("final_response", "I understood the intent, but I am missing details.")
@@ -462,22 +500,39 @@ public class PaymentAgent {
         // but we define the logic clearly here.
         workflow.addConditionalEdges(
                 "parse_intent",
+//                state -> {
+//                    String nextNode = state.value("intent")
+//                            .map(i -> (PaymentIntent) i)
+//                            .filter(PaymentIntent::isComplete)
+//                            .map(i -> "execute_transaction")
+//                            .orElse("ask_missing_info");
+//
+//                    return CompletableFuture.completedFuture(nextNode);
+//                },
+//                Map.of(
+//                        "execute_transaction", "execute_transaction",
+//                        "ask_missing_info", "ask_missing_info"
+//                )
                 state -> {
-                    String nextNode = state.value("intent")
-                            .map(i -> (PaymentIntent) i)
-                            .filter(PaymentIntent::isComplete)
-                            .map(i -> "execute_transaction")
-                            .orElse("ask_missing_info");
+                    PaymentIntent i = (PaymentIntent) state.value("intent").orElse(null);
+                    if (i == null) return CompletableFuture.completedFuture("ask_missing_info");
 
-                    return CompletableFuture.completedFuture(nextNode);
+                    if ("SAVE_CONTACT".equalsIgnoreCase(i.getIntent()) && i.isComplete()) {
+                        return CompletableFuture.completedFuture("save_contact");
+                    } else if (i.isComplete()) {
+                        return CompletableFuture.completedFuture("execute_transaction");
+                    } else {
+                        return CompletableFuture.completedFuture("ask_missing_info");
+                    }
                 },
                 Map.of(
                         "execute_transaction", "execute_transaction",
+                        "save_contact", "save_contact",
                         "ask_missing_info", "ask_missing_info"
                 )
         );
 
-        // --- FIX: CONNECT TERMINAL NODES TO "END" ---
+        // --- CONNECT TERMINAL NODES TO "END" ---
         // This tells the graph "We are done now".
         workflow.addEdge("execute_transaction", END);
         workflow.addEdge("ask_missing_info", END);
